@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
@@ -9,6 +9,10 @@ import { Notification } from '../entities/notification.entity';
 
 @Injectable()
 export class UserService {
+  private isExpoPushToken(token: string): boolean {
+    return /^ExponentPushToken\[[^\]]+\]$/.test(token) || /^ExpoPushToken\[[^\]]+\]$/.test(token);
+  }
+
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
@@ -133,7 +137,19 @@ export class UserService {
   async updatePushToken(userId: number, expoPushToken: string): Promise<{ message: string }> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-    user.expoPushToken = expoPushToken;
+
+    const normalizedToken = expoPushToken?.trim?.() ?? '';
+    if (!normalizedToken) {
+      user.expoPushToken = null as any;
+      await this.usersRepository.save(user);
+      return { message: 'Push token cleared' };
+    }
+
+    if (!this.isExpoPushToken(normalizedToken)) {
+      throw new BadRequestException('Invalid Expo push token');
+    }
+
+    user.expoPushToken = normalizedToken;
     await this.usersRepository.save(user);
     return { message: 'Push token saved' };
   }

@@ -4,9 +4,16 @@ import { Injectable, Logger } from '@nestjs/common';
 export class PushNotificationService {
   private readonly logger = new Logger(PushNotificationService.name);
 
+  private isExpoPushToken(token: string): boolean {
+    return /^ExponentPushToken\[[^\]]+\]$/.test(token) || /^ExpoPushToken\[[^\]]+\]$/.test(token);
+  }
+
   async sendPush(expoPushToken: string | null | undefined, title: string, body: string, data?: Record<string, any>) {
     if (!expoPushToken) return;
-    if (!expoPushToken.startsWith('ExponentPushToken')) return;
+    if (!this.isExpoPushToken(expoPushToken)) {
+      this.logger.warn(`Skipping invalid push token format: ${expoPushToken}`);
+      return;
+    }
 
     const message = {
       to: expoPushToken,
@@ -29,6 +36,12 @@ export class PushNotificationService {
         body: JSON.stringify(message),
       });
       const result = await res.json();
+
+      if (!res.ok || result?.data?.status === 'error' || result?.errors?.length) {
+        this.logger.warn(`Expo push API rejected notification for ${expoPushToken}: ${JSON.stringify(result)}`);
+        return;
+      }
+
       this.logger.log(`Push sent to ${expoPushToken}: ${JSON.stringify(result)}`);
     } catch (err) {
       this.logger.error(`Failed to send push to ${expoPushToken}:`, err);
