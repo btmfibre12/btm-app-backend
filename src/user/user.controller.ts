@@ -10,6 +10,7 @@ import {
   UseGuards,
   ParseIntPipe,
   ParseFloatPipe,
+  Logger,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -26,6 +27,8 @@ import { UpdateLocationDto } from '../dto/update-location.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UserController {
   constructor(private userService: UserService) {}
+
+  private readonly logger = new Logger('UserController');
 
   /**
    * GET /users/me
@@ -142,6 +145,7 @@ export class UserController {
     @GetUser() user: User,
     @Body('expoPushToken') expoPushToken: string,
   ) {
+    this.logger.log(`[PATCH /users/push-token] userId=${user.id} token=${expoPushToken ?? 'empty'}`);
     return this.userService.updatePushToken(user.id, expoPushToken);
   }
 

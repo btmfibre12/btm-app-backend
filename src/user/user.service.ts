@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
@@ -9,6 +9,8 @@ import { Notification } from '../entities/notification.entity';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   private isExpoPushToken(token: string): boolean {
     return /^ExponentPushToken\[[^\]]+\]$/.test(token) || /^ExpoPushToken\[[^\]]+\]$/.test(token);
   }
@@ -84,7 +86,6 @@ export class UserService {
     user.isActive = isActive;
     const saved = await this.usersRepository.save(user);
 
-    // 🔔 Notify user when their account is approved/activated
     if (isActive && wasInactive && user.role !== 'admin') {
       const notification = this.notificationRepo.create({
         user: saved,
@@ -114,11 +115,6 @@ export class UserService {
     return this.usersRepository.save(user);
   }
 
-  // ─── LOCATION FEATURES ────────────────────────────────────────────────────
-
-  /**
-   * Called by a technician to save their current GPS coordinates.
-   */
   async updateLocation(userId: number, dto: UpdateLocationDto): Promise<{ message: string }> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -139,25 +135,26 @@ export class UserService {
     if (!user) throw new NotFoundException('User not found');
 
     const normalizedToken = expoPushToken?.trim?.() ?? '';
+    this.logger.log(`[updatePushToken] userId=${userId} passedToken=${normalizedToken || 'empty'}`);
+
     if (!normalizedToken) {
       user.expoPushToken = null as any;
       await this.usersRepository.save(user);
+      this.logger.warn(`[updatePushToken] Cleared token for userId=${userId}`);
       return { message: 'Push token cleared' };
     }
 
     if (!this.isExpoPushToken(normalizedToken)) {
+      this.logger.warn(`[updatePushToken] Invalid Expo push token for userId=${userId}: ${normalizedToken}`);
       throw new BadRequestException('Invalid Expo push token');
     }
 
     user.expoPushToken = normalizedToken;
     await this.usersRepository.save(user);
+    this.logger.log(`[updatePushToken] Saved push token for userId=${userId}`);
     return { message: 'Push token saved' };
   }
 
-  /**
-   * Given a client's coordinates, returns available technicians
-   * sorted by distance (nearest first) using the Haversine formula.
-   */
   async getNearestTechnicians(
     clientLat: number,
     clientLng: number,
@@ -168,13 +165,10 @@ export class UserService {
       select: ['id', 'fullName', 'email', 'latitude', 'longitude', 'isAvailable'],
     });
 
-    // Filter out techs with no location set
     const techsWithLocation = technicians.filter(
       (t) => t.latitude != null && t.longitude != null,
     );
 
-    // Calculate distance using Haversine formula
-    // Note: TypeORM returns decimal columns as strings from MySQL, so we parse them
     const withDistance = techsWithLocation.map((tech) => ({
       id: tech.id,
       fullName: tech.fullName,
@@ -183,16 +177,11 @@ export class UserService {
       distanceKm: this.haversineKm(clientLat, clientLng, parseFloat(tech.latitude as any), parseFloat(tech.longitude as any)),
     }));
 
-    // Sort nearest first, return top N
     return withDistance
       .sort((a, b) => a.distanceKm - b.distanceKm)
       .slice(0, limitCount);
   }
 
-  /**
-   * Haversine formula — calculates great-circle distance between two
-   * lat/lng points in kilometres.
-   */
   async updateBankDetails(userId: number, dto: { bankName: string; bankAccountNumber: string; bankAccountHolder: string }) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -203,7 +192,7 @@ export class UserService {
   }
 
   private haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const R = 6371; // Earth radius in km
+    const R = 6371;
     const dLat = this.toRad(lat2 - lat1);
     const dLng = this.toRad(lng2 - lng1);
 
@@ -215,7 +204,7 @@ export class UserService {
         Math.sin(dLng / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return Math.round(R * c * 10) / 10; // rounded to 1 decimal place
+    return Math.round(R * c * 10) / 10;
   }
 
   private toRad(deg: number): number {
