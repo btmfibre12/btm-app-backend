@@ -63,9 +63,9 @@ export class JobService {
         const surname = dto.manualClientSurname?.trim();
         const email = dto.manualClientEmail?.trim();
         const phone = dto.manualClientPhone?.trim();
-        if (!name || !surname || !email || !phone) {
+        if (!name || !surname || !phone) {
           throw new BadRequestException(
-            'Manual client details are required (name, surname, email, phone) when no client account is selected.',
+            'Manual client details are required (name, surname, phone) when no client account is selected.',
           );
         }
 
@@ -73,7 +73,7 @@ export class JobService {
         bookingClient = requester;
         manualClientName = name;
         manualClientSurname = surname;
-        manualClientEmail = email;
+        manualClientEmail = email || null;
         manualClientPhone = phone;
       }
     } else {
